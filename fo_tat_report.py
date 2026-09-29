@@ -68,13 +68,19 @@ MANAGER_COMPLETED_DATE_COL = "Manager Completed Date"
 SUB_PRODUCT_ALIASES = {"MEDICAL BILL VERIFICATION": "MBV"}
 
 
-def _read_with_header_detection(path: str) -> pd.DataFrame:
+def _read_with_header_detection(path) -> pd.DataFrame:
     """Some exports have a title row above the header, some don't. Try
     header=0 first, and fall back to header=1 (skipping a title row) if
-    the expected columns aren't found."""
+    the expected columns aren't found. `path` may be a file path or a
+    file-like object (e.g. a Streamlit upload) - the latter needs
+    seeking back to the start between read attempts."""
+    if hasattr(path, "seek"):
+        path.seek(0)
     df = pd.read_excel(path, sheet_name="Sheet1", header=0)
     if FO_NAME_COL in df.columns and SUB_PRODUCT_COL in df.columns:
         return df
+    if hasattr(path, "seek"):
+        path.seek(0)
     df = pd.read_excel(path, sheet_name="Sheet1", header=1)
     if FO_NAME_COL in df.columns and SUB_PRODUCT_COL in df.columns:
         return df
