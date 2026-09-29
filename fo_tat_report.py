@@ -62,6 +62,10 @@ CREATED_DATE_COL = "Created Date"
 FO_COMPLETED_DATE_COL = "FO Completed Date"
 FINAL_CONCLUSION_COL = "Final Conclusion"
 DISCREPANT_VALUE = "Discrepant"
+MANAGER_COMPLETED_DATE_COL = "Manager Completed Date"
+
+# Alternate Sub Product names that map onto a standard category.
+SUB_PRODUCT_ALIASES = {"MEDICAL BILL VERIFICATION": "MBV"}
 
 
 def _read_with_header_detection(path: str) -> pd.DataFrame:
@@ -92,6 +96,28 @@ def load_data(path: str) -> pd.DataFrame:
         df[FO_TAT_COL] = (completed - created).dt.days
 
     df = df.dropna(subset=[FO_NAME_COL, SUB_PRODUCT_COL])
+
+    if MANAGER_COMPLETED_DATE_COL in df.columns:
+        # The export's own Manager Days column is an Excel formula over text
+        # dates (#VALUE! / day-month swaps), so recompute it from the dates.
+        # Rows with a negative value are excluded; rows without both dates
+        # are kept.
+        manager_done = pd.to_datetime(df[MANAGER_COMPLETED_DATE_COL], dayfirst=True, errors="coerce")
+        fo_done = pd.to_datetime(df[FO_COMPLETED_DATE_COL], dayfirst=True, errors="coerce")
+        manager_days = (manager_done - fo_done).dt.days
+        negative = manager_days < 0
+        if negative.any():
+            print(f"Excluded {int(negative.sum())} row(s) with negative Manager Days")
+        df = df[~negative]
+
+    df[SUB_PRODUCT_COL] = df[SUB_PRODUCT_COL].replace(SUB_PRODUCT_ALIASES)
+
+    unmapped = df.loc[~df[SUB_PRODUCT_COL].isin(STANDARD_TAT.keys()), SUB_PRODUCT_COL]
+    if len(unmapped):
+        print(f"WARNING: {len(unmapped)} row(s) skipped - no standard TAT defined for:")
+        for name, count in unmapped.value_counts().items():
+            print(f"    {name}: {count}")
+
     df = df[df[SUB_PRODUCT_COL].isin(STANDARD_TAT.keys())]
     return df
 
