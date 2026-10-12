@@ -64,10 +64,37 @@ CATEGORY_LABELS = {
 MANAGER_COL = "Manager"
 SUB_PRODUCT_COL = "Sub Product"
 TAT_COL = "TAT"
-MANAGER_CLOSED_DAYS_COL = "Manager closed days"
+MANAGER_COMPLETED_DATE_COL = "Manager Completed Date"
+FO_COMPLETED_DATE_COL = "FO Completed Date"
 FINAL_CONCLUSION_COL = "Final Conclusion"
 DISCREPANT_VALUE = "Discrepant"
 MANAGER_CLOSED_DAYS_THRESHOLD = 2
+
+# Exports name this column inconsistently, and some omit it entirely.
+MANAGER_CLOSED_DAYS_COLS = ("Manager closed days", "Manager Days")
+
+
+def manager_closed_days(df: pd.DataFrame) -> pd.Series:
+    """Days the manager took to close, as Manager Completed Date minus FO
+    Completed Date. Preferred over the export's own column, which is named
+    inconsistently across exports, is missing from some, and in others is an
+    Excel formula over text dates that evaluates to #VALUE! or a wrong number.
+    On exports that do carry a clean column this matches it exactly."""
+    if MANAGER_COMPLETED_DATE_COL in df.columns and FO_COMPLETED_DATE_COL in df.columns:
+        manager_done = pd.to_datetime(df[MANAGER_COMPLETED_DATE_COL], dayfirst=True, errors="coerce")
+        fo_done = pd.to_datetime(df[FO_COMPLETED_DATE_COL], dayfirst=True, errors="coerce")
+        return (manager_done - fo_done).dt.days
+
+    for col in MANAGER_CLOSED_DAYS_COLS:
+        if col in df.columns:
+            return pd.to_numeric(df[col], errors="coerce")
+
+    raise ValueError(
+        f"Cannot determine manager closed days: the file has neither "
+        f"'{MANAGER_COMPLETED_DATE_COL}' + '{FO_COMPLETED_DATE_COL}' nor any of "
+        f"{list(MANAGER_CLOSED_DAYS_COLS)}. Check that this is a "
+        "'Health Managers closed' export."
+    )
 
 
 def _read_with_header_detection(path) -> pd.DataFrame:
@@ -106,7 +133,7 @@ def build_report(df: pd.DataFrame) -> pd.DataFrame:
     df["_standard_tat"] = df[SUB_PRODUCT_COL].map(STANDARD_TAT)
     df["_within_tat"] = df[TAT_COL] <= df["_standard_tat"]
     df["_discrepant"] = df[FINAL_CONCLUSION_COL] == DISCREPANT_VALUE
-    df["_closed_2plus"] = df[MANAGER_CLOSED_DAYS_COL] >= MANAGER_CLOSED_DAYS_THRESHOLD
+    df["_closed_2plus"] = manager_closed_days(df) >= MANAGER_CLOSED_DAYS_THRESHOLD
 
     managers = sorted(df[MANAGER_COL].dropna().unique())
     rows = []
